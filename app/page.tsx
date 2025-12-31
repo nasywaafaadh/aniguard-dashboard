@@ -16,7 +16,8 @@ import {
   Shield,
   Maximize2,
   RefreshCw,
-  Camera
+  Camera,
+  X
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -34,7 +35,7 @@ type Detection = {
   created_at: string;
   animal: string;
   confidence: number;
-  image_url: string;
+  imageurl: string;
 };
 
 // --- HELPER FUNCTIONS (Format Waktu) ---
@@ -193,32 +194,45 @@ const DashboardPage = ({ data, loading }: { data: Detection[], loading: boolean 
   );
 };
 
-// --- HALAMAN HISTORY (Menerima Data Asli) ---
+// --- HALAMAN HISTORY (Versi Lengkap: Filter Tanggal + Modal) ---
 const HistoryPage = ({ data, loading }: { data: Detection[], loading: boolean }) => {
+  // State untuk Filter
   const [selectedAnimal, setSelectedAnimal] = useState('All');
-  
-  // 1. Filter Data untuk Tabel
+  const [selectedDate, setSelectedDate] = useState('All'); // <--- State Baru buat Tanggal
+
+  // State untuk Modal Gambar Fullscreen
+  const [selectedImageForModal, setSelectedImageForModal] = useState<string | null>(null);
+
+  // --- LOGIKA FILTERING DATA ---
   const filteredData = data.filter((item) => {
-    return selectedAnimal === 'All' || item.animal === selectedAnimal;
+    // 1. Cek Hewan
+    const matchAnimal = selectedAnimal === 'All' || item.animal === selectedAnimal;
+    
+    // 2. Cek Tanggal
+    let matchDate = true;
+    if (selectedDate === 'Today') {
+      const todayStr = new Date().toDateString(); // Contoh: "Wed Dec 31 2025"
+      const itemDateStr = new Date(item.created_at).toDateString();
+      matchDate = todayStr === itemDateStr;
+    }
+    // Kalau 'All', berarti matchDate selalu true (tampilkan semua)
+
+    return matchAnimal && matchDate;
   });
 
-  // 2. Olah Data untuk Grafik (Weekly Stats)
-  // Logic: Loop 7 hari terakhir, hitung jumlah kemunculan per tanggal
+  // Olah Data untuk Grafik
   const chartData = (() => {
     const stats = [];
     const today = new Date();
     for (let i = 6; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
-      const dateString = d.toLocaleDateString('en-US'); // Format MM/DD/YYYY untuk compare
-      
-      // Hitung berapa data yang tanggalnya sama
+      const dateString = d.toLocaleDateString('en-US');
       const count = data.filter(item => 
         new Date(item.created_at).toLocaleDateString('en-US') === dateString
       ).length;
-
       stats.push({ 
-        name: d.toLocaleDateString('en-US', { weekday: 'short' }), // Mon, Tue...
+        name: d.toLocaleDateString('en-US', { weekday: 'short' }), 
         count: count 
       });
     }
@@ -226,11 +240,38 @@ const HistoryPage = ({ data, loading }: { data: Detection[], loading: boolean })
   })();
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in relative">
+      
+      {/* --- MODAL OVERLAY --- */}
+      {selectedImageForModal && (
+        <div 
+          className="fixed inset-0 bg-black/90 z-9999 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+          onClick={() => setSelectedImageForModal(null)}
+        >
+          <button 
+            onClick={() => setSelectedImageForModal(null)}
+            className="absolute top-6 right-6 text-white hover:text-gray-300 hover:bg-white/10 p-2 rounded-full transition z-50"
+          >
+             <X size={32} strokeWidth={2} />
+          </button>
+          <div className="relative w-full max-w-5xl h-[80vh] bg-transparent rounded-xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+             <Image
+               src={selectedImageForModal}
+               alt="Full View"
+               fill
+               className="object-contain"
+               unoptimized
+             />
+          </div>
+        </div>
+      )}
+
+      {/* --- FILTER & HEADER --- */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Historical Data</h2>
         
         <div className="flex gap-2">
+          {/* Dropdown 1: Hewan */}
           <select 
             value={selectedAnimal}
             onChange={(e) => setSelectedAnimal(e.target.value)}
@@ -241,6 +282,16 @@ const HistoryPage = ({ data, loading }: { data: Detection[], loading: boolean })
             <option value="Dog">Dog</option>
             <option value="Mouse">Mouse</option>
             <option value="Chicken">Chicken</option>
+          </select>
+
+          {/* Dropdown 2: Tanggal (INI YANG BARU DITAMBAHKAN) */}
+          <select 
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="p-2 rounded-lg border border-gray-300 text-sm bg-white dark:bg-gray-800 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-emerald-500 outline-none"
+          >
+            <option value="All">Last 7 Days</option>
+            <option value="Today">Today</option>
           </select>
         </div>
       </div>
@@ -271,13 +322,12 @@ const HistoryPage = ({ data, loading }: { data: Detection[], loading: boolean })
               <tr>
                 <th className="p-4 font-semibold text-center">Time</th>
                 <th className="p-4 font-semibold text-center">Animal</th>
-                <th className="p-4 font-semibold text-center">Confidence</th>
                 <th className="p-4 font-semibold text-center">Snapshot</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {loading ? (
-                 <tr><td colSpan={4} className="p-8 text-center">Loading data...</td></tr>
+                 <tr><td colSpan={3} className="p-8 text-center">Loading data...</td></tr>
               ) : filteredData.length > 0 ? (
                 filteredData.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
@@ -286,24 +336,36 @@ const HistoryPage = ({ data, loading }: { data: Detection[], loading: boolean })
                       <div className="text-xs text-gray-400">{formatDate(item.created_at)}</div>
                     </td>
                     <td className="p-4"><Badge type={item.animal} /></td>
-                    <td className="p-4 text-xs font-mono">{(item.confidence * 100).toFixed(0)}%</td>
                     <td className="p-4">
-                      {/* Tombol Lihat Gambar */}
-                      <a 
-                        href={item.image_url} 
-                        target="_blank" 
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded text-xs transition"
-                      >
-                         <Camera size={12}/> View
-                      </a>
+                      {/* Thumbnail dengan Cek URL Kosong */}
+                      {item.imageurl && item.imageurl.length > 5 ? (
+                        <button 
+                          onClick={() => setSelectedImageForModal(item.imageurl)}
+                          className="relative w-24 h-16 mx-auto rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 cursor-pointer group shadow-sm hover:shadow-md transition-all"
+                        >
+                          <Image 
+                            src={item.imageurl} 
+                            alt="Snapshot Thumbnail"
+                            fill
+                            className="object-cover group-hover:scale-105 transition-transform duration-500"
+                            unoptimized
+                          />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+                            <Maximize2 className="text-white drop-shadow-lg" size={20} />
+                          </div>
+                        </button>
+                      ) : (
+                        <div className="w-24 h-16 mx-auto bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center text-xs text-gray-400 italic">
+                          No Image
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={4} className="p-8 text-center text-gray-400 italic">
-                    No data found.
+                  <td colSpan={3} className="p-8 text-center text-gray-400 italic">
+                    No data found for this filter.
                   </td>
                 </tr>
               )}
