@@ -1,7 +1,8 @@
-"use client"; // <--- WAJIB ADA DI BARIS 1 KARENA PAKAI STATE
+"use client"; 
 
 import React, { useState, useRef, useEffect } from 'react';
-import Image from 'next/image'; // Menggunakan Image optimizer bawaan Next.js
+import Image from 'next/image';
+import { supabase } from '@/lib/supabaseClient'; // Pastikan path ini benar
 import { 
   LayoutDashboard, 
   History, 
@@ -14,10 +15,8 @@ import {
   Activity,
   Shield,
   Maximize2,
-  Cat,
-  Dog,
-  Rat,
-  Bird 
+  RefreshCw,
+  Camera
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -29,44 +28,33 @@ import {
   ResponsiveContainer 
 } from 'recharts';
 
-// PENTING: Pastikan kamu sudah menaruh file 'logo.jpg' di dalam folder 'public'
-// Kita tidak perlu import logoSaya from './logo.jpg' lagi.
+// --- TIPE DATA SUPABASE ---
+type Detection = {
+  id: number;
+  created_at: string;
+  animal: string;
+  confidence: number;
+  image_url: string;
+};
 
-const fullHistoryData = [
-  { id: 1, time: '10:42 AM', date: '2025-12-08', animal: 'Cat', snapshot: 'IMG-001' },
-  { id: 2, time: '09:15 AM', date: '2025-12-08', animal: 'Chicken', snapshot: 'IMG-002' },
-  { id: 3, time: '08:30 AM', date: '2025-12-08', animal: 'Cat', snapshot: 'IMG-003' },
-  { id: 4, time: '06:10 AM', date: '2025-12-08', animal: 'Dog', snapshot: 'IMG-004' },
-  { id: 5, time: '11:20 PM', date: '2025-12-07', animal: 'Mouse', snapshot: 'IMG-005' },
-  { id: 6, time: '08:10 PM', date: '2025-12-07', animal: 'Cat', snapshot: 'IMG-006' },
-  { id: 7, time: '05:45 PM', date: '2025-12-07', animal: 'Chicken', snapshot: 'IMG-007' },
-  { id: 8, time: '01:15 PM', date: '2025-12-06', animal: 'Mouse', snapshot: 'IMG-008' },
-  { id: 9, time: '09:00 AM', date: '2025-12-06', animal: 'Dog', snapshot: 'IMG-009' },
-  { id: 10, time: '07:30 AM', date: '2025-12-05', animal: 'Cat', snapshot: 'IMG-010' },
-  { id: 11, time: '03:45 AM', date: '2025-12-05', animal: 'Mouse', snapshot: 'IMG-011' },
-  { id: 12, time: '10:10 PM', date: '2025-12-04', animal: 'Chicken', snapshot: 'IMG-012' },
-  { id: 13, time: '04:20 PM', date: '2025-12-04', animal: 'Dog', snapshot: 'IMG-013' },
-  { id: 14, time: '11:05 AM', date: '2025-12-03', animal: 'Cat', snapshot: 'IMG-014' },
-  { id: 15, time: '06:30 AM', date: '2025-12-02', animal: 'Mouse', snapshot: 'IMG-015' },
-];
+// --- HELPER FUNCTIONS (Format Waktu) ---
+const formatDate = (isoString: string) => {
+  return new Date(isoString).toLocaleDateString('id-ID', {
+    day: 'numeric', month: 'short', year: 'numeric'
+  });
+};
 
-// --- MOCK DATA ---
-const detectionData = (() => {
-  const stats = [];
-  const today = new Date('2025-12-08'); 
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i); 
-    const dateString = d.toISOString().split('T')[0];
-    const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
-    const count = fullHistoryData.filter(item => item.date === dateString).length;
-    stats.push({ name: dayName, count: count });
-  }
-  return stats;
-})();
+const formatTime = (isoString: string) => {
+  return new Date(isoString).toLocaleTimeString('id-ID', {
+    hour: '2-digit', minute: '2-digit'
+  });
+};
+
+const getDayName = (isoString: string) => {
+  return new Date(isoString).toLocaleDateString('en-US', { weekday: 'short' });
+};
 
 // --- KOMPONEN KECIL ---
-// Kita tambahkan 'any' sementara agar TypeScript tidak rewel, nanti bisa diperbaiki
 const Card = ({ children, className }: any) => (
   <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 ${className}`}>
     {children}
@@ -74,6 +62,7 @@ const Card = ({ children, className }: any) => (
 );
 
 const Badge = ({ type }: { type: string }) => {
+  // Fallback color kalau hewan tidak dikenal
   const colors: any = {
     Cat: 'bg-orange-100 text-orange-700 border-orange-200',
     Dog: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -81,19 +70,23 @@ const Badge = ({ type }: { type: string }) => {
     Chicken: 'bg-yellow-100 text-yellow-700 border-yellow-200',
   };
   return (
-    <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${colors[type] || 'bg-gray-100'}`}>
+    <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${colors[type] || 'bg-gray-100 text-gray-600'}`}>
       {type}
     </span>
   );
 };
 
-// --- HALAMAN UTAMA (DASHBOARD) ---
-const DashboardPage = () => {
+// --- HALAMAN DASHBOARD (Menerima Data Asli) ---
+const DashboardPage = ({ data, loading }: { data: Detection[], loading: boolean }) => {
   const enableWebcam = false; 
-  const todayDate = '2025-12-08';
-  const todaysData = fullHistoryData.filter(item => item.date === todayDate);
-  const totalCount = todaysData.length; 
-  const lastItem = todaysData.length > 0 ? todaysData[0] : null; 
+  
+  // Hitung Statistik dari Data Asli
+  const totalCount = data.length;
+  const lastItem = data.length > 0 ? data[0] : null; // Data paling atas = paling baru
+  
+  // Hitung Data Hari Ini
+  const todayStr = new Date().toDateString();
+  const todaysCount = data.filter(d => new Date(d.created_at).toDateString() === todayStr).length;
 
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const webcamRef = useRef<HTMLVideoElement>(null);
@@ -111,12 +104,6 @@ const DashboardPage = () => {
       }
     };
     startWebcam();
-    return () => {
-      if (webcamRef.current && webcamRef.current.srcObject) {
-        const tracks = (webcamRef.current.srcObject as MediaStream).getTracks();
-        tracks.forEach(track => track.stop());
-      }
-    };
   }, [enableWebcam]); 
 
   const toggleFullScreen = () => {
@@ -130,6 +117,7 @@ const DashboardPage = () => {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Kolom Kiri: Video & Live Monitor */}
         <div className="lg:col-span-2 space-y-4">
           <h2 className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
             <Video className="w-5 h-5 text-emerald-500" /> Live Monitoring
@@ -140,50 +128,41 @@ const DashboardPage = () => {
             className="relative w-full aspect-video bg-gray-900 rounded-2xl overflow-hidden shadow-lg group flex items-center justify-center"
           >
             {enableWebcam ? (
-              <video 
-                ref={webcamRef}
-                autoPlay 
-                muted 
-                className="absolute inset-0 w-full h-full object-cover"
-              />
+              <video ref={webcamRef} autoPlay muted className="absolute inset-0 w-full h-full object-cover" />
             ) : (
               <div className="text-center z-0">
                  <Activity className="w-12 h-12 mx-auto mb-2 opacity-50 text-gray-500 dark:text-gray-200" />
-                 <p className="text-gray-500 dark:text-gray-200">Connecting to Camera...</p>
+                 <p className="text-gray-500 dark:text-gray-200">System Standby...</p>
               </div>
             )}
 
             <div className="absolute top-4 left-4 bg-red-600 text-white text-xs px-2 py-1 rounded animate-pulse font-bold z-10">
               ● LIVE
             </div>
-            
-            <div className="absolute top-4 right-4 text-white/70 text-xs font-mono z-10 bg-black/20 p-1 rounded">
-              {enableWebcam ? "CAM" : "CAM"} | Resolution | Frame Rate
-            </div>
-
-            <button 
-              onClick={toggleFullScreen}
-              className="absolute bottom-4 right-4 p-2 bg-black/40 hover:bg-emerald-600 text-white rounded-lg transition-all z-20 backdrop-blur-sm group-hover:opacity-100"
-              title="Full Screen"
-            >
+            <button onClick={toggleFullScreen} className="absolute bottom-4 right-4 p-2 bg-black/40 hover:bg-emerald-600 text-white rounded-lg transition-all z-20 backdrop-blur-sm">
               <Maximize2 size={20} />
             </button>
           </div>
         </div>
 
-        {/* Quick Stats */}
+        {/* Kolom Kanan: Statistik */}
         <div className="space-y-4">
-           <h2 className="text-xl font-bold text-gray-800 dark:text-white">Summary Today</h2>
+           <h2 className="text-xl font-bold text-gray-800 dark:text-white">Quick Stats</h2>
+           
+           {/* Kartu Total Deteksi */}
            <Card className="flex items-center gap-4 border-l-4 border-l-emerald-500">
               <div className="p-3 bg-emerald-100 rounded-full text-emerald-600">
                 <AlertTriangle size={24} />
               </div>
               <div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">Total Detections</p>
-                <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{totalCount}</h3>
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {loading ? "..." : totalCount}
+                </h3>
               </div>
            </Card>
            
+           {/* Kartu Terakhir Dilihat */}
            <Card className="flex items-center gap-4 border-l-4 border-l-blue-500">
               <div className="p-3 bg-blue-100 rounded-full text-blue-600">
                 <History size={24} />
@@ -192,34 +171,20 @@ const DashboardPage = () => {
                 <p className="text-sm text-gray-500 dark:text-gray-400">Last Detection</p>
                 {lastItem ? (
                   <>
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">{lastItem.animal}</h3>
-                    <p className="text-xs text-gray-400">{lastItem.time}</p>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white capitalize">{lastItem.animal}</h3>
+                    <p className="text-xs text-gray-400">{formatTime(lastItem.created_at)} • {formatDate(lastItem.created_at)}</p>
                   </>
                 ) : (
-                  <p className="text-sm font-bold text-gray-400">No Data Yet</p>
+                  <p className="text-sm font-bold text-gray-400">{loading ? "Loading..." : "No Data Yet"}</p>
                 )}
               </div>
            </Card>
 
            <Card>
-              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">System Status</h4>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">SBC Core Temp</span>
-                  <span className="text-green-600 font-medium">42°C</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">CPU Usage</span>
-                  <span className="text-green-600 font-medium">75%</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Memory Usage</span>
-                  <span className="text-green-600 font-medium">25%</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Disk Usage</span>
-                  <span className="text-green-600 font-medium">80%</span>
-                </div>
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Today's Activity</h4>
+              <div className="text-center py-4">
+                <span className="text-4xl font-bold text-gray-800 dark:text-white">{todaysCount}</span>
+                <p className="text-sm text-gray-500">Animals Detected Today</p>
               </div>
            </Card>
         </div>
@@ -228,19 +193,37 @@ const DashboardPage = () => {
   );
 };
 
-// --- HALAMAN HISTORY ---
-const HistoryPage = () => {
+// --- HALAMAN HISTORY (Menerima Data Asli) ---
+const HistoryPage = ({ data, loading }: { data: Detection[], loading: boolean }) => {
   const [selectedAnimal, setSelectedAnimal] = useState('All');
-  const [selectedDate, setSelectedDate] = useState('All');
-
-    const filteredData = fullHistoryData.filter((item) => {
-    const matchAnimal = selectedAnimal === 'All' || item.animal === selectedAnimal;
-    let matchDate = true;
-    if (selectedDate === 'Today') {
-      matchDate = item.date === '2025-12-08'; 
-    }
-    return matchAnimal && matchDate;
+  
+  // 1. Filter Data untuk Tabel
+  const filteredData = data.filter((item) => {
+    return selectedAnimal === 'All' || item.animal === selectedAnimal;
   });
+
+  // 2. Olah Data untuk Grafik (Weekly Stats)
+  // Logic: Loop 7 hari terakhir, hitung jumlah kemunculan per tanggal
+  const chartData = (() => {
+    const stats = [];
+    const today = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const dateString = d.toLocaleDateString('en-US'); // Format MM/DD/YYYY untuk compare
+      
+      // Hitung berapa data yang tanggalnya sama
+      const count = data.filter(item => 
+        new Date(item.created_at).toLocaleDateString('en-US') === dateString
+      ).length;
+
+      stats.push({ 
+        name: d.toLocaleDateString('en-US', { weekday: 'short' }), // Mon, Tue...
+        count: count 
+      });
+    }
+    return stats;
+  })();
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -259,31 +242,28 @@ const HistoryPage = () => {
             <option value="Mouse">Mouse</option>
             <option value="Chicken">Chicken</option>
           </select>
-
-          <select 
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="p-2 rounded-lg border border-gray-300 text-sm bg-white dark:bg-gray-800 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-emerald-500 outline-none"
-          >
-            <option value="All">Last 7 Days</option>
-            <option value="Today">Today</option>
-          </select>
         </div>
       </div>
 
+      {/* GRAFIK */}
       <Card className="h-64 w-full">
-        <h3 className="text-sm font-semibold text-gray-500 mb-4">Weekly Activity</h3>
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={detectionData}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-            <XAxis dataKey="name" tick={{fontSize: 12}} axisLine={false} tickLine={false} />
-            <YAxis tick={{fontSize: 12}} axisLine={false} tickLine={false} />
-            <Tooltip cursor={{fill: 'transparent'}} />
-            <Bar dataKey="count" fill="#10B981" radius={[4, 4, 0, 0]} barSize={30} />
-          </BarChart>
-        </ResponsiveContainer>
+        <h3 className="text-sm font-semibold text-gray-500 mb-4">Activity (Last 7 Days)</h3>
+        {loading ? (
+            <div className="h-full flex items-center justify-center text-gray-400">Loading Chart...</div>
+        ) : (
+            <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                <XAxis dataKey="name" tick={{fontSize: 12}} axisLine={false} tickLine={false} />
+                <YAxis tick={{fontSize: 12}} axisLine={false} tickLine={false} />
+                <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ borderRadius: '8px' }} />
+                <Bar dataKey="count" fill="#10B981" radius={[4, 4, 0, 0]} barSize={30} />
+            </BarChart>
+            </ResponsiveContainer>
+        )}
       </Card>
 
+      {/* TABEL */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-center text-sm text-gray-600 dark:text-gray-300">
@@ -291,29 +271,39 @@ const HistoryPage = () => {
               <tr>
                 <th className="p-4 font-semibold text-center">Time</th>
                 <th className="p-4 font-semibold text-center">Animal</th>
+                <th className="p-4 font-semibold text-center">Confidence</th>
                 <th className="p-4 font-semibold text-center">Snapshot</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {filteredData.length > 0 ? (
+              {loading ? (
+                 <tr><td colSpan={4} className="p-8 text-center">Loading data...</td></tr>
+              ) : filteredData.length > 0 ? (
                 filteredData.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <td className="p-4">
-                      <div className="font-medium text-gray-900 dark:text-white">{item.time}</div>
-                      <div className="text-xs text-gray-400">{item.date}</div>
+                      <div className="font-medium text-gray-900 dark:text-white">{formatTime(item.created_at)}</div>
+                      <div className="text-xs text-gray-400">{formatDate(item.created_at)}</div>
                     </td>
                     <td className="p-4"><Badge type={item.animal} /></td>
+                    <td className="p-4 text-xs font-mono">{(item.confidence * 100).toFixed(0)}%</td>
                     <td className="p-4">
-                      <div className="h-10 w-16 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500 mx-auto">
-                        {item.snapshot}
-                      </div>
+                      {/* Tombol Lihat Gambar */}
+                      <a 
+                        href={item.image_url} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded text-xs transition"
+                      >
+                         <Camera size={12}/> View
+                      </a>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={3} className="p-8 text-center text-gray-400 italic">
-                    No data found for this filter.
+                  <td colSpan={4} className="p-8 text-center text-gray-400 italic">
+                    No data found.
                   </td>
                 </tr>
               )}
@@ -325,7 +315,7 @@ const HistoryPage = () => {
   );
 };
 
-// --- HALAMAN SYSTEM INFO ---
+// --- HALAMAN SYSTEM INFO (Tetap Static) ---
 const SystemInfoPage = () => (
   <div className="space-y-6">
     <h2 className="text-2xl font-bold text-gray-800 dark:text-white">System Information</h2>
@@ -333,22 +323,15 @@ const SystemInfoPage = () => (
       <Card>
         <h3 className="font-bold text-lg mb-4 dark:text-white">Device Info</h3>
         <ul className="space-y-3 text-sm">
-          <li className="flex justify-between border-b pb-2 dark:text-white"><span>Model:</span> <span className="font-mono">Jetson Nano</span></li>
-          <li className="flex justify-between border-b pb-2 dark:text-white"><span>OS Version:</span> <span className="font-mono">Ubuntu 18.04 LTS</span></li>
-          <li className="flex justify-between border-b pb-2 dark:text-white"><span>Uptime:</span> <span className="font-mono">4 Days, 2 Hours</span></li>
-          <li className="flex justify-between dark:text-white"><span>IP Address:</span> <span className="font-mono">192.168.1.105</span></li>
+          <li className="flex justify-between border-b pb-2 dark:text-white"><span>Model:</span> <span className="font-mono">Jetson Nano 4GB</span></li>
+          <li className="flex justify-between border-b pb-2 dark:text-white"><span>OS:</span> <span className="font-mono">Ubuntu 18.04 (JetPack 4.6)</span></li>
+          <li className="flex justify-between border-b pb-2 dark:text-white"><span>Connectivity:</span> <span className="font-mono text-emerald-500">Online (MQTT)</span></li>
         </ul>
       </Card>
       <Card>
-         <h3 className="font-bold text-lg mb-4 dark:text-white">Detection Settings</h3>
-         <div className="flex flex-wrap gap-2">
-            <Badge type="Cat" />
-            <Badge type="Dog" />
-            <Badge type="Mouse" />
-            <Badge type="Chicken" />
-         </div>
-         <p className="mt-4 text-sm text-gray-500">Zone Area: 5x5 Meters</p>
-         <p className="text-sm text-gray-500">Detection Confidence: &gt; 75%</p>
+         <h3 className="font-bold text-lg mb-4 dark:text-white">Configuration</h3>
+         <p className="mt-4 text-sm text-gray-500">Database: Supabase (PostgreSQL)</p>
+         <p className="text-sm text-gray-500">Storage: Supabase Buckets</p>
       </Card>
     </div>
   </div>
@@ -359,6 +342,31 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [darkMode, setDarkMode] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // STATE UNTUK DATA
+  const [data, setData] = useState<Detection[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // FUNGSI FETCH DATA DARI SUPABASE
+  const fetchData = async () => {
+    setLoading(true);
+    const { data: detections, error } = await supabase
+      .from("detections")
+      .select("*")
+      .order("created_at", { ascending: false }); // Urutkan dari yang terbaru
+
+    if (error) {
+      console.error("Error fetching data:", error);
+    } else {
+      setData(detections || []);
+    }
+    setLoading(false);
+  };
+
+  // Ambil data saat pertama kali buka web
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
@@ -424,13 +432,13 @@ export default function Home() {
           {/* Bottom Info */}
           <div className="p-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">
-              {/* Gambar Profil Kecil (Menggunakan Image Next.js) */}
-              <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-300 relative">
-                  {/* Pastikan file logo.jpg ada di folder public */}
-                  <Image src="/logo.jpg" alt="User" fill className="object-cover" />
+              <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-300 relative bg-gray-200">
+                 {/* Placeholder Avatar */}
+                 <div className="w-full h-full flex items-center justify-center text-gray-500 font-bold">A</div>
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Admin</p>
+                <p className="text-xs text-green-500">● Online</p>
               </div>
             </div>
           </div>
@@ -453,19 +461,32 @@ export default function Home() {
             {activeTab.replace('-', ' ')}
           </h1>
 
-          <button 
-            onClick={toggleDarkMode}
-            className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-yellow-400 hover:bg-gray-200 transition-colors"
-          >
-            {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
+          <div className="flex gap-2">
+             {/* Tombol Refresh Data */}
+             <button 
+                onClick={fetchData}
+                title="Refresh Data"
+                className="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 transition-colors"
+             >
+                <RefreshCw size={20} className={loading ? "animate-spin" : ""} />
+             </button>
+
+             {/* Dark Mode Toggle */}
+             <button 
+               onClick={toggleDarkMode}
+               className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-yellow-400 hover:bg-gray-200 transition-colors"
+             >
+               {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+             </button>
+          </div>
         </header>
 
         {/* SCROLLABLE PAGE CONTENT */}
         <main className="flex-1 overflow-y-auto p-4 lg:p-8">
           <div className="max-w-6xl mx-auto">
-            {activeTab === 'dashboard' && <DashboardPage />}
-            {activeTab === 'history' && <HistoryPage />}
+             {/* Kirim DATA asli ke component anak */}
+            {activeTab === 'dashboard' && <DashboardPage data={data} loading={loading} />}
+            {activeTab === 'history' && <HistoryPage data={data} loading={loading} />}
             {activeTab === 'system' && <SystemInfoPage />}
           </div>
         </main>
