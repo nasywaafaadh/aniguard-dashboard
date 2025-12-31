@@ -77,81 +77,85 @@ const Badge = ({ type }: { type: string }) => {
   );
 };
 
-// --- HALAMAN DASHBOARD (Menerima Data Asli) ---
+// --- HALAMAN DASHBOARD (Update: Ada Kotak Input Ngrok) ---
 const DashboardPage = ({ data, loading }: { data: Detection[], loading: boolean }) => {
-  const enableWebcam = false; 
-  
-  // Hitung Statistik dari Data Asli
+  // State untuk menyimpan URL Stream dari Ngrok
+  const [streamUrl, setStreamUrl] = useState(""); 
+  const [isStreaming, setIsStreaming] = useState(false);
+
+  // Statistik Data
   const totalCount = data.length;
-  const lastItem = data.length > 0 ? data[0] : null; // Data paling atas = paling baru
-  
-  // Hitung Data Hari Ini
+  const lastItem = data.length > 0 ? data[0] : null;
   const todayStr = new Date().toDateString();
   const todaysCount = data.filter(d => new Date(d.created_at).toDateString() === todayStr).length;
-
-  const videoContainerRef = useRef<HTMLDivElement>(null);
-  const webcamRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    if (!enableWebcam) return; 
-    const startWebcam = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        if (webcamRef.current) {
-          webcamRef.current.srcObject = stream;
-        }
-      } catch (err) {
-        console.error("Gagal akses kamera:", err);
-      }
-    };
-    startWebcam();
-  }, [enableWebcam]); 
-
-  const toggleFullScreen = () => {
-    if (!document.fullscreenElement && videoContainerRef.current) {
-      videoContainerRef.current.requestFullscreen().catch(err => alert(err.message));
-    } else {
-      document.exitFullscreen();
-    }
-  };
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Kolom Kiri: Video & Live Monitor */}
+        
+        {/* --- KOLOM KIRI: LIVE MONITORING --- */}
         <div className="lg:col-span-2 space-y-4">
           <h2 className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
             <Video className="w-5 h-5 text-emerald-500" /> Live Monitoring
           </h2>
           
-          <div 
-            ref={videoContainerRef} 
-            className="relative w-full aspect-video bg-gray-900 rounded-2xl overflow-hidden shadow-lg group flex items-center justify-center"
-          >
-            {enableWebcam ? (
-              <video ref={webcamRef} autoPlay muted className="absolute inset-0 w-full h-full object-cover" />
+          {/* Layar Video */}
+          <div className="relative w-full aspect-video bg-gray-900 rounded-2xl overflow-hidden shadow-lg group flex flex-col items-center justify-center">
+            
+            {/* Logic Tampilan Video */}
+            {isStreaming && streamUrl ? (
+              <img 
+                src={streamUrl} 
+                alt="Live Stream" 
+                className="absolute inset-0 w-full h-full object-cover"
+              />
             ) : (
-              <div className="text-center z-0">
+              <div className="text-center z-10 px-4">
                  <Activity className="w-12 h-12 mx-auto mb-2 opacity-50 text-gray-500 dark:text-gray-200" />
-                 <p className="text-gray-500 dark:text-gray-200">System Standby...</p>
+                 <p className="text-gray-500 dark:text-gray-200 mb-4">Stream Offline / Link Required</p>
               </div>
             )}
 
-            <div className="absolute top-4 left-4 bg-red-600 text-white text-xs px-2 py-1 rounded animate-pulse font-bold z-10">
-              ● LIVE
+            {/* Indikator LIVE */}
+            {isStreaming && (
+              <div className="absolute top-4 left-4 bg-red-600 text-white text-xs px-2 py-1 rounded animate-pulse font-bold z-10 shadow-sm">
+                ● LIVE VIA NGROK
+              </div>
+            )}
+          </div>
+
+          {/* --- [INI KOTAK INPUT YANG KAMU CARI] --- */}
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+            <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 block">
+              Stream Source (Ngrok URL)
+            </label>
+            <div className="flex gap-2">
+              <input 
+                type="text" 
+                placeholder="Paste link Ngrok di sini... (https://....ngrok-free.dev)"
+                value={streamUrl}
+                onChange={(e) => setStreamUrl(e.target.value)}
+                className="flex-1 p-2 rounded-lg border border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <button 
+                onClick={() => setIsStreaming(!isStreaming)}
+                className={`px-4 py-2 rounded-lg text-sm font-bold text-white transition-colors ${
+                  isStreaming ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'
+                }`}
+              >
+                {isStreaming ? 'Stop' : 'Start'}
+              </button>
             </div>
-            <button onClick={toggleFullScreen} className="absolute bottom-4 right-4 p-2 bg-black/40 hover:bg-emerald-600 text-white rounded-lg transition-all z-20 backdrop-blur-sm">
-              <Maximize2 size={20} />
-            </button>
+            <p className="text-xs text-gray-400 mt-2">
+              *Jangan lupa tambahkan <code>/video_feed</code> di akhir link.
+            </p>
           </div>
         </div>
 
-        {/* Kolom Kanan: Statistik */}
+        {/* --- KOLOM KANAN: STATISTIK --- */}
         <div className="space-y-4">
            <h2 className="text-xl font-bold text-gray-800 dark:text-white">Quick Stats</h2>
-           
-           {/* Kartu Total Deteksi */}
-           <Card className="flex items-center gap-4 border-l-4 border-l-emerald-500">
+           <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex items-center gap-4 border-l-4 border-l-emerald-500">
               <div className="p-3 bg-emerald-100 rounded-full text-emerald-600">
                 <AlertTriangle size={24} />
               </div>
@@ -161,10 +165,9 @@ const DashboardPage = ({ data, loading }: { data: Detection[], loading: boolean 
                   {loading ? "..." : totalCount}
                 </h3>
               </div>
-           </Card>
+           </div>
            
-           {/* Kartu Terakhir Dilihat */}
-           <Card className="flex items-center gap-4 border-l-4 border-l-blue-500">
+           <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex items-center gap-4 border-l-4 border-l-blue-500">
               <div className="p-3 bg-blue-100 rounded-full text-blue-600">
                 <History size={24} />
               </div>
@@ -173,21 +176,13 @@ const DashboardPage = ({ data, loading }: { data: Detection[], loading: boolean 
                 {lastItem ? (
                   <>
                     <h3 className="text-lg font-bold text-gray-900 dark:text-white capitalize">{lastItem.animal}</h3>
-                    <p className="text-xs text-gray-400">{formatTime(lastItem.created_at)} • {formatDate(lastItem.created_at)}</p>
+                    <p className="text-xs text-gray-400">{new Date(lastItem.created_at).toLocaleTimeString()}</p>
                   </>
                 ) : (
                   <p className="text-sm font-bold text-gray-400">{loading ? "Loading..." : "No Data Yet"}</p>
                 )}
               </div>
-           </Card>
-
-           <Card>
-              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Today's Activity</h4>
-              <div className="text-center py-4">
-                <span className="text-4xl font-bold text-gray-800 dark:text-white">{todaysCount}</span>
-                <p className="text-sm text-gray-500">Animals Detected Today</p>
-              </div>
-           </Card>
+           </div>
         </div>
       </div>
     </div>
