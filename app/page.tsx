@@ -77,100 +77,100 @@ const Badge = ({ type }: { type: string }) => {
   );
 };
 
-// --- HALAMAN DASHBOARD (Update: Ada Kotak Input Ngrok) ---
+// --- HALAMAN DASHBOARD (Versi Final: Auto-Fetch Link dari Database) ---
 const DashboardPage = ({ data, loading }: { data: Detection[], loading: boolean }) => {
-  // State untuk menyimpan URL Stream dari Ngrok
-  const [streamUrl, setStreamUrl] = useState(""); 
-  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamUrl, setStreamUrl] = useState("");
+  const [isStreaming, setIsStreaming] = useState(true); // Default langsung START
+
+  // 1. Ambil Link dari Supabase saat web dibuka
+  useEffect(() => {
+    const fetchStreamUrl = async () => {
+      const { data: settings } = await supabase
+        .from('settings')
+        .select('stream_url')
+        .eq('id', 1)
+        .single();
+
+      if (settings?.stream_url) {
+        setStreamUrl(settings.stream_url);
+      }
+    };
+
+    fetchStreamUrl();
+    
+    // Opsional: Cek link baru setiap 10 detik (Realtime)
+    const interval = setInterval(fetchStreamUrl, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Statistik Data
   const totalCount = data.length;
   const lastItem = data.length > 0 ? data[0] : null;
-  const todayStr = new Date().toDateString();
-  const todaysCount = data.filter(d => new Date(d.created_at).toDateString() === todayStr).length;
+  const todaysCount = data.filter(d => new Date(d.created_at).toDateString() === new Date().toDateString()).length;
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* --- KOLOM KIRI: LIVE MONITORING --- */}
+        {/* KOLOM KIRI: LIVE MONITORING */}
         <div className="lg:col-span-2 space-y-4">
           <h2 className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
             <Video className="w-5 h-5 text-emerald-500" /> Live Monitoring
           </h2>
           
-          {/* Layar Video */}
           <div className="relative w-full aspect-video bg-gray-900 rounded-2xl overflow-hidden shadow-lg group flex flex-col items-center justify-center">
-            
-            {/* Logic Tampilan Video */}
-            {isStreaming && streamUrl ? (
+            {streamUrl ? (
+              // Link otomatis diambil dari state
               <img 
                 src={streamUrl} 
                 alt="Live Stream" 
                 className="absolute inset-0 w-full h-full object-cover"
+                onError={(e) => {
+                    // Kalau link mati/salah, sembunyikan gambar
+                    (e.target as HTMLImageElement).style.display = 'none';
+                }}
               />
             ) : (
-              <div className="text-center z-10 px-4">
-                 <Activity className="w-12 h-12 mx-auto mb-2 opacity-50 text-gray-500 dark:text-gray-200" />
-                 <p className="text-gray-500 dark:text-gray-200 mb-4">Stream Offline / Link Required</p>
+              // Loading State saat mengambil link
+              <div className="text-center z-10 px-4 animate-pulse">
+                 <p className="text-gray-400">Fetching Stream URL...</p>
               </div>
             )}
+            
+            {/* Tampilan Error/Offline jika gambar tidak muncul */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center -z-10">
+                 <Activity className="w-12 h-12 mb-2 opacity-50 text-gray-500" />
+                 <p className="text-gray-500">Stream Offline</p>
+            </div>
 
-            {/* Indikator LIVE */}
-            {isStreaming && (
-              <div className="absolute top-4 left-4 bg-red-600 text-white text-xs px-2 py-1 rounded animate-pulse font-bold z-10 shadow-sm">
-                ● LIVE VIA NGROK
+            {streamUrl && (
+              <div className="absolute top-4 left-4 bg-red-600/90 backdrop-blur text-white text-xs px-2 py-1 rounded animate-pulse font-bold z-10 shadow-sm">
+                ● LIVE
               </div>
             )}
           </div>
-
-          {/* --- [INI KOTAK INPUT YANG KAMU CARI] --- */}
-          <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-            <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 block">
-              Stream Source (Ngrok URL)
-            </label>
-            <div className="flex gap-2">
-              <input 
-                type="text" 
-                placeholder="Paste link Ngrok di sini... (https://....ngrok-free.dev)"
-                value={streamUrl}
-                onChange={(e) => setStreamUrl(e.target.value)}
-                className="flex-1 p-2 rounded-lg border border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-              <button 
-                onClick={() => setIsStreaming(!isStreaming)}
-                className={`px-4 py-2 rounded-lg text-sm font-bold text-white transition-colors ${
-                  isStreaming ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'
-                }`}
-              >
-                {isStreaming ? 'Stop' : 'Start'}
-              </button>
-            </div>
-            <p className="text-xs text-gray-400 mt-2">
-              *Jangan lupa tambahkan <code>/video_feed</code> di akhir link.
-            </p>
+          
+          {/* Info kecil saja, tidak perlu input box lagi */}
+          <div className="text-xs text-gray-400 text-center">
+            Source: {streamUrl || "Connecting..."}
           </div>
         </div>
 
-        {/* --- KOLOM KANAN: STATISTIK --- */}
+        {/* KOLOM KANAN: STATISTIK (Tetap Sama) */}
         <div className="space-y-4">
+           {/* ... Bagian Statistik Copy dari kode sebelumnya ... */}
+           {/* Biar tidak kepanjangan, bagian statistik sama persis seperti sebelumnya */}
            <h2 className="text-xl font-bold text-gray-800 dark:text-white">Quick Stats</h2>
            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex items-center gap-4 border-l-4 border-l-emerald-500">
-              <div className="p-3 bg-emerald-100 rounded-full text-emerald-600">
-                <AlertTriangle size={24} />
-              </div>
+              <div className="p-3 bg-emerald-100 rounded-full text-emerald-600"><AlertTriangle size={24} /></div>
               <div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">Total Detections</p>
-                <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {loading ? "..." : totalCount}
-                </h3>
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{loading ? "..." : totalCount}</h3>
               </div>
            </div>
            
            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex items-center gap-4 border-l-4 border-l-blue-500">
-              <div className="p-3 bg-blue-100 rounded-full text-blue-600">
-                <History size={24} />
-              </div>
+              <div className="p-3 bg-blue-100 rounded-full text-blue-600"><History size={24} /></div>
               <div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">Last Detection</p>
                 {lastItem ? (
@@ -178,12 +178,16 @@ const DashboardPage = ({ data, loading }: { data: Detection[], loading: boolean 
                     <h3 className="text-lg font-bold text-gray-900 dark:text-white capitalize">{lastItem.animal}</h3>
                     <p className="text-xs text-gray-400">{new Date(lastItem.created_at).toLocaleTimeString()}</p>
                   </>
-                ) : (
-                  <p className="text-sm font-bold text-gray-400">{loading ? "Loading..." : "No Data Yet"}</p>
-                )}
+                ) : <p className="text-sm font-bold text-gray-400">No Data Yet</p>}
               </div>
            </div>
+
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 text-center">
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Today's Activity</h4>
+              <span className="text-4xl font-bold text-gray-800 dark:text-white">{todaysCount}</span>
+            </div>
         </div>
+
       </div>
     </div>
   );
