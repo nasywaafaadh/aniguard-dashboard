@@ -426,7 +426,29 @@ export default function Home() {
 
   // Ambil data saat pertama kali buka web
   useEffect(() => {
+    // 1. Ambil data awal (History lama)
     fetchData();
+
+    // 2. Pasang "Kuping" Realtime (Supabase Subscribe)
+    const channel = supabase
+      .channel('realtime-detections') // Nama channel bebas
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'detections' },
+        (payload) => {
+          console.log('⚡ DATA BARU MASUK:', payload.new);
+          
+          // Masukkan data baru ke paling atas (Index 0)
+          // "as Detection" dipakai biar Typescript tidak rewel
+          setData((prevData) => [payload.new as Detection, ...prevData]);
+        }
+      )
+      .subscribe();
+
+    // 3. Bersih-bersih koneksi kalau pindah halaman (biar ga memory leak)
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const toggleDarkMode = () => {
