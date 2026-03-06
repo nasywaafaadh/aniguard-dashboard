@@ -1,0 +1,26 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Detection {
+  id         Int      @id @default(autoincrement())
+  created_at DateTime @default(now())
+  animal     String   // "Cat", "Dog", "Mouse", "Chicken"
+  confidence Float    
+  imageurl   String   // Path ke foto di public/snapshots
+}
+
+// Tabel untuk Pengaturan Sistem (Link Kamera)
+model Settings {
+  id         Int    @id @default(autoincrement())
+  stream_url String
+}

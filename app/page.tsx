@@ -2,7 +2,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
-import { supabase } from '@/lib/supabaseClient'; // Pastikan path ini benar
 import { 
   LayoutDashboard, 
   History, 
@@ -29,13 +28,13 @@ import {
   ResponsiveContainer 
 } from 'recharts';
 
-// --- TIPE DATA SUPABASE ---
+// --- TIPE DATA ---
 type Detection = {
   id: number;
   created_at: string;
   animal: string;
   confidence: number;
-  imageurl: string;
+  imageurl: string; // Sesuai schema Prisma nanti
 };
 
 // --- HELPER FUNCTIONS (Format Waktu) ---
@@ -63,7 +62,6 @@ const Card = ({ children, className }: any) => (
 );
 
 const Badge = ({ type }: { type: string }) => {
-  // Fallback color kalau hewan tidak dikenal
   const colors: any = {
     Cat: 'bg-orange-100 text-orange-700 border-orange-200',
     Dog: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -77,33 +75,29 @@ const Badge = ({ type }: { type: string }) => {
   );
 };
 
-// --- HALAMAN DASHBOARD (Versi Final: Auto-Fetch Link dari Database) ---
+// --- HALAMAN DASHBOARD ---
 const DashboardPage = ({ data, loading }: { data: Detection[], loading: boolean }) => {
-  const [streamUrl, setStreamUrl] = useState("");
-  const [isStreaming, setIsStreaming] = useState(true); // Default langsung START
+  const [streamUrl, setStreamUrl] = useState("https://monitor.aniguard-system.my.id/video_feed");
 
-  // 1. Ambil Link dari Supabase saat web dibuka
+  // 1. Ambil Link dari API Lokal
   useEffect(() => {
     const fetchStreamUrl = async () => {
-      const { data: settings } = await supabase
-        .from('settings')
-        .select('stream_url')
-        .eq('id', 1)
-        .single();
-
-      if (settings?.stream_url) {
-        setStreamUrl(settings.stream_url);
+      try {
+        const res = await fetch('/api/settings');
+        const settings = await res.json();
+        if (settings?.stream_url) {
+          setStreamUrl(settings.stream_url);
+        }
+      } catch (error) {
+        console.error("Gagal mengambil URL Stream", error);
       }
     };
 
     fetchStreamUrl();
-    
-    // Opsional: Cek link baru setiap 10 detik (Realtime)
     const interval = setInterval(fetchStreamUrl, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  // Statistik Data
   const totalCount = data.length;
   const lastItem = data.length > 0 ? data[0] : null;
   const todaysCount = data.filter(d => new Date(d.created_at).toDateString() === new Date().toDateString()).length;
@@ -120,24 +114,20 @@ const DashboardPage = ({ data, loading }: { data: Detection[], loading: boolean 
           
           <div className="relative w-full aspect-video bg-gray-900 rounded-2xl overflow-hidden shadow-lg group flex flex-col items-center justify-center">
             {streamUrl ? (
-              // Link otomatis diambil dari state
               <img 
                 src={streamUrl} 
                 alt="Live Stream" 
                 className="absolute inset-0 w-full h-full object-cover"
                 onError={(e) => {
-                    // Kalau link mati/salah, sembunyikan gambar
                     (e.target as HTMLImageElement).style.display = 'none';
                 }}
               />
             ) : (
-              // Loading State saat mengambil link
               <div className="text-center z-10 px-4 animate-pulse">
                  <p className="text-gray-400">Fetching Stream URL...</p>
               </div>
             )}
             
-            {/* Tampilan Error/Offline jika gambar tidak muncul */}
             <div className="absolute inset-0 flex flex-col items-center justify-center -z-10">
                  <Activity className="w-12 h-12 mb-2 opacity-50 text-gray-500" />
                  <p className="text-gray-500">Stream Offline</p>
@@ -150,16 +140,13 @@ const DashboardPage = ({ data, loading }: { data: Detection[], loading: boolean 
             )}
           </div>
           
-          {/* Info kecil saja, tidak perlu input box lagi */}
           <div className="text-xs text-gray-400 text-center">
             Source: {streamUrl || "Connecting..."}
           </div>
         </div>
 
-        {/* KOLOM KANAN: STATISTIK (Tetap Sama) */}
+        {/* KOLOM KANAN: STATISTIK */}
         <div className="space-y-4">
-           {/* ... Bagian Statistik Copy dari kode sebelumnya ... */}
-           {/* Biar tidak kepanjangan, bagian statistik sama persis seperti sebelumnya */}
            <h2 className="text-xl font-bold text-gray-800 dark:text-white">Quick Stats</h2>
            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex items-center gap-4 border-l-4 border-l-emerald-500">
               <div className="p-3 bg-emerald-100 rounded-full text-emerald-600"><AlertTriangle size={24} /></div>
@@ -193,33 +180,23 @@ const DashboardPage = ({ data, loading }: { data: Detection[], loading: boolean 
   );
 };
 
-// --- HALAMAN HISTORY (Versi Lengkap: Filter Tanggal + Modal) ---
+// --- HALAMAN HISTORY ---
 const HistoryPage = ({ data, loading }: { data: Detection[], loading: boolean }) => {
-  // State untuk Filter
   const [selectedAnimal, setSelectedAnimal] = useState('All');
-  const [selectedDate, setSelectedDate] = useState('All'); // <--- State Baru buat Tanggal
-
-  // State untuk Modal Gambar Fullscreen
+  const [selectedDate, setSelectedDate] = useState('All'); 
   const [selectedImageForModal, setSelectedImageForModal] = useState<string | null>(null);
 
-  // --- LOGIKA FILTERING DATA ---
   const filteredData = data.filter((item) => {
-    // 1. Cek Hewan
     const matchAnimal = selectedAnimal === 'All' || item.animal === selectedAnimal;
-    
-    // 2. Cek Tanggal
     let matchDate = true;
     if (selectedDate === 'Today') {
-      const todayStr = new Date().toDateString(); // Contoh: "Wed Dec 31 2025"
+      const todayStr = new Date().toDateString(); 
       const itemDateStr = new Date(item.created_at).toDateString();
       matchDate = todayStr === itemDateStr;
     }
-    // Kalau 'All', berarti matchDate selalu true (tampilkan semua)
-
     return matchAnimal && matchDate;
   });
 
-  // Olah Data untuk Grafik
   const chartData = (() => {
     const stats = [];
     const today = new Date();
@@ -244,7 +221,7 @@ const HistoryPage = ({ data, loading }: { data: Detection[], loading: boolean })
       {/* --- MODAL OVERLAY --- */}
       {selectedImageForModal && (
         <div 
-          className="fixed inset-0 bg-black/90 z-9999 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+          className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
           onClick={() => setSelectedImageForModal(null)}
         >
           <button 
@@ -270,7 +247,6 @@ const HistoryPage = ({ data, loading }: { data: Detection[], loading: boolean })
         <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Historical Data</h2>
         
         <div className="flex gap-2">
-          {/* Dropdown 1: Hewan */}
           <select 
             value={selectedAnimal}
             onChange={(e) => setSelectedAnimal(e.target.value)}
@@ -283,7 +259,6 @@ const HistoryPage = ({ data, loading }: { data: Detection[], loading: boolean })
             <option value="Chicken">Chicken</option>
           </select>
 
-          {/* Dropdown 2: Tanggal (INI YANG BARU DITAMBAHKAN) */}
           <select 
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
@@ -298,7 +273,7 @@ const HistoryPage = ({ data, loading }: { data: Detection[], loading: boolean })
       {/* GRAFIK */}
       <Card className="h-64 w-full">
         <h3 className="text-sm font-semibold text-gray-500 mb-4">Activity (Last 7 Days)</h3>
-        {loading ? (
+        {loading && data.length === 0 ? (
             <div className="h-full flex items-center justify-center text-gray-400">Loading Chart...</div>
         ) : (
             <ResponsiveContainer width="100%" height="100%">
@@ -325,7 +300,7 @@ const HistoryPage = ({ data, loading }: { data: Detection[], loading: boolean })
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {loading ? (
+              {loading && data.length === 0 ? (
                  <tr><td colSpan={3} className="p-8 text-center">Loading data...</td></tr>
               ) : filteredData.length > 0 ? (
                 filteredData.map((item) => (
@@ -336,7 +311,6 @@ const HistoryPage = ({ data, loading }: { data: Detection[], loading: boolean })
                     </td>
                     <td className="p-4"><Badge type={item.animal} /></td>
                     <td className="p-4">
-                      {/* Thumbnail dengan Cek URL Kosong */}
                       {item.imageurl && item.imageurl.length > 5 ? (
                         <button 
                           onClick={() => setSelectedImageForModal(item.imageurl)}
@@ -376,7 +350,7 @@ const HistoryPage = ({ data, loading }: { data: Detection[], loading: boolean })
   );
 };
 
-// --- HALAMAN SYSTEM INFO (Tetap Static) ---
+// --- HALAMAN SYSTEM INFO (Diperbarui informasinya) ---
 const SystemInfoPage = () => (
   <div className="space-y-6">
     <h2 className="text-2xl font-bold text-gray-800 dark:text-white">System Information</h2>
@@ -391,8 +365,8 @@ const SystemInfoPage = () => (
       </Card>
       <Card>
          <h3 className="font-bold text-lg mb-4 dark:text-white">Configuration</h3>
-         <p className="mt-4 text-sm text-gray-500">Database: Supabase (PostgreSQL)</p>
-         <p className="text-sm text-gray-500">Storage: Supabase Buckets</p>
+         <p className="mt-4 text-sm text-gray-500">Database: SQLite (Prisma Local)</p>
+         <p className="text-sm text-gray-500">Storage: Local Storage (/public/snapshots)</p>
       </Card>
     </div>
   </div>
@@ -404,51 +378,35 @@ export default function Home() {
   const [darkMode, setDarkMode] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // STATE UNTUK DATA
   const [data, setData] = useState<Detection[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // FUNGSI FETCH DATA DARI SUPABASE
-  const fetchData = async () => {
-    setLoading(true);
-    const { data: detections, error } = await supabase
-      .from("detections")
-      .select("*")
-      .order("created_at", { ascending: false }); // Urutkan dari yang terbaru
-
-    if (error) {
+  // FUNGSI FETCH DARI API LOKAL
+  const fetchDetections = async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
+    try {
+      const response = await fetch('/api/logs'); // Mengambil data dari API lokal Next.js
+      if (response.ok) {
+        const result = await response.json();
+        setData(result);
+      }
+    } catch (error) {
       console.error("Error fetching data:", error);
-    } else {
-      setData(detections || []);
+    } finally {
+      if (!isSilent) setLoading(false);
     }
-    setLoading(false);
   };
 
-  // Ambil data saat pertama kali buka web
   useEffect(() => {
-    // 1. Ambil data awal (History lama)
-    fetchData();
+    // 1. Ambil data pertama kali (dengan animasi loading)
+    fetchDetections(false);
 
-    // 2. Pasang "Kuping" Realtime (Supabase Subscribe)
-    const channel = supabase
-      .channel('realtime-detections') // Nama channel bebas
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'detections' },
-        (payload) => {
-          console.log('⚡ DATA BARU MASUK:', payload.new);
-          
-          // Masukkan data baru ke paling atas (Index 0)
-          // "as Detection" dipakai biar Typescript tidak rewel
-          setData((prevData) => [payload.new as Detection, ...prevData]);
-        }
-      )
-      .subscribe();
+    // 2. Polling: Cek data baru setiap 3 detik di background (tanpa animasi loading)
+    const interval = setInterval(() => {
+      fetchDetections(true);
+    }, 3000);
 
-    // 3. Bersih-bersih koneksi kalau pindah halaman (biar ga memory leak)
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => clearInterval(interval);
   }, []);
 
   const toggleDarkMode = () => {
@@ -479,7 +437,6 @@ export default function Home() {
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="h-full flex flex-col">
-          {/* Logo Area */}
           <div className="h-16 flex items-center px-6 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-2 font-bold text-xl text-emerald-600">
               <Shield/>
@@ -487,7 +444,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Menu Items */}
           <nav className="flex-1 px-4 py-6 space-y-2">
             {menuItems.map((item) => {
               const Icon = item.icon;
@@ -512,11 +468,9 @@ export default function Home() {
             })}
           </nav>
 
-          {/* Bottom Info */}
           <div className="p-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-300 relative bg-gray-200">
-                 {/* Placeholder Avatar */}
                  <div className="w-full h-full flex items-center justify-center text-gray-500 font-bold">A</div>
               </div>
               <div>
@@ -530,8 +484,6 @@ export default function Home() {
 
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        
-        {/* TOP NAVBAR */}
         <header className="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 lg:px-8">
           <button 
             className="lg:hidden p-2 text-gray-600 dark:text-gray-200"
@@ -545,16 +497,14 @@ export default function Home() {
           </h1>
 
           <div className="flex gap-2">
-             {/* Tombol Refresh Data */}
              <button 
-                onClick={fetchData}
+                onClick={() => fetchDetections(false)}
                 title="Refresh Data"
                 className="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 transition-colors"
              >
                 <RefreshCw size={20} className={loading ? "animate-spin" : ""} />
              </button>
 
-             {/* Dark Mode Toggle */}
              <button 
                onClick={toggleDarkMode}
                className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-yellow-400 hover:bg-gray-200 transition-colors"
@@ -564,16 +514,13 @@ export default function Home() {
           </div>
         </header>
 
-        {/* SCROLLABLE PAGE CONTENT */}
         <main className="flex-1 overflow-y-auto p-4 lg:p-8">
           <div className="max-w-6xl mx-auto">
-             {/* Kirim DATA asli ke component anak */}
             {activeTab === 'dashboard' && <DashboardPage data={data} loading={loading} />}
             {activeTab === 'history' && <HistoryPage data={data} loading={loading} />}
             {activeTab === 'system' && <SystemInfoPage />}
           </div>
         </main>
-
       </div>
     </div>
   );

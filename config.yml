@@ -1,0 +1,15 @@
+tunnel: c1b6e8fd-f2de-475e-8b13-7b8400de36a6
+credentials-file: C:\Users\Nasywa\.cloudflared\c1b6e8fd-f2de-475e-8b13-7b8400de36a6.json
+
+ingress:
+  # Jalur khusus untuk Video (Port 5000)
+  - hostname: monitor.aniguard-system.my.id
+    path: /video_feed
+    service: http://localhost:5000
+  
+  # Jalur utama untuk Web (Port 3000)
+  - hostname: monitor.aniguard-system.my.id
+    service: http://localhost:3000
+
+  # Jika alamat tidak cocok, berikan error 404
+  - service: http_status:404
