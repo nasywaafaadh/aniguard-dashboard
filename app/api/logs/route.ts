@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/db'; // Pastikan path ini benar
+import prisma from '@/lib/db'; 
+import fs from 'fs';
+import path from 'path';
 
 export async function POST(req: Request) {
   try {
@@ -14,13 +16,50 @@ export async function POST(req: Request) {
       }
     });
     
+    // AUTO CLEANUP
+    try {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const oldDetections = await prisma.detection.findMany({
+        where: {
+          created_at: {
+            lt: sevenDaysAgo, 
+          },
+        },
+      });
+
+      for (const det of oldDetections) {
+        if (det.imageurl) {
+          const filePath = path.join(process.cwd(), 'public', det.imageurl);
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            console.log(`[CLEANUP] File foto lama dihapus: ${det.imageurl}`);
+          }
+        }
+      }
+
+      if (oldDetections.length > 0) {
+        await prisma.detection.deleteMany({
+          where: {
+            created_at: {
+              lt: sevenDaysAgo,
+            },
+          },
+        });
+        console.log(`[CLEANUP] Berhasil menghapus ${oldDetections.length} baris data lama dari database.`);
+      }
+    } catch (cleanupError) {
+      console.error("[WARNING] Gagal melakukan auto-cleanup:", cleanupError);
+    }
+    
     return NextResponse.json({ success: true, data: newDetection });
+
   } catch (error) {
-    console.error("DETAILED ERROR:", error); // Ini akan memunculkan alasan asli kenapa 500
+    console.error("DETAILED ERROR:", error); 
     return NextResponse.json({ error: "Gagal simpan ke DB" }, { status: 500 });
   }
 }
-
+    
 export async function GET() {
   try {
     const data = await prisma.detection.findMany({

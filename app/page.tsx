@@ -16,7 +16,8 @@ import {
   Maximize2,
   RefreshCw,
   Camera,
-  X
+  X,
+  Droplet
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -78,6 +79,9 @@ const Badge = ({ type }: { type: string }) => {
 // --- HALAMAN DASHBOARD ---
 const DashboardPage = ({ data, loading }: { data: Detection[], loading: boolean }) => {
   const [streamUrl, setStreamUrl] = useState("https://monitor.aniguard-system.my.id/video_feed");
+  
+  // State sementara untuk indikator air (Bisa diubah jadi true untuk test tampilan "Low")
+  const [isWaterLow, setIsWaterLow] = useState(false); 
 
   // 1. Ambil Link dari API Lokal
   useEffect(() => {
@@ -148,6 +152,8 @@ const DashboardPage = ({ data, loading }: { data: Detection[], loading: boolean 
         {/* KOLOM KANAN: STATISTIK */}
         <div className="space-y-4">
            <h2 className="text-xl font-bold text-gray-800 dark:text-white">Quick Stats</h2>
+           
+           {/* Card Total Detections */}
            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex items-center gap-4 border-l-4 border-l-emerald-500">
               <div className="p-3 bg-emerald-100 rounded-full text-emerald-600"><AlertTriangle size={24} /></div>
               <div>
@@ -156,6 +162,7 @@ const DashboardPage = ({ data, loading }: { data: Detection[], loading: boolean 
               </div>
            </div>
            
+           {/* Card Last Detection */}
            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex items-center gap-4 border-l-4 border-l-blue-500">
               <div className="p-3 bg-blue-100 rounded-full text-blue-600"><History size={24} /></div>
               <div>
@@ -169,12 +176,34 @@ const DashboardPage = ({ data, loading }: { data: Detection[], loading: boolean 
               </div>
            </div>
 
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 text-center">
-              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Today's Activity</h4>
-              <span className="text-4xl font-bold text-gray-800 dark:text-white">{todaysCount}</span>
-            </div>
-        </div>
+           <div className="grid grid-cols-2 gap-4">
+             {/* Card Today's Activity */}
+             <div className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 text-center flex flex-col justify-center">
+               <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Today's Activity</h4>
+               <span className="text-3xl font-bold text-gray-800 dark:text-white">{todaysCount}</span>
+             </div>
 
+             {/* CARD BARU: Water Tank Level */}
+             <div className={`p-5 rounded-xl shadow-sm border flex flex-col items-center justify-center transition-colors duration-300 ${
+                 isWaterLow 
+                 ? 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800' 
+                 : 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800'
+               }`}
+             >
+               <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Water Tank</h4>
+               <div className="flex items-center gap-2">
+                 <Droplet 
+                   size={24} 
+                   className={isWaterLow ? 'text-red-500 animate-pulse' : 'text-blue-500'} 
+                 />
+                 <span className={`text-xl font-bold ${isWaterLow ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`}>
+                   {isWaterLow ? 'LOW' : 'SAFE'}
+                 </span>
+               </div>
+             </div>
+           </div>
+
+        </div>
       </div>
     </div>
   );
